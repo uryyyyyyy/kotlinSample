@@ -19,4 +19,5 @@ repositories {
 
 dependencies {
 	compile 'org.jetbrains.kotlin:kotlin-stdlib:0.10.195'
+	compile 'org.apache.jackrabbit:jackrabbit-webdav:2.10.0'
 }
