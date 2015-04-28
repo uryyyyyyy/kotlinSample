@@ -1,23 +1,24 @@
 package example
 
-import java.io.File
-import java.nio.file.Files
+import dto.OwnCloudFile
 import org.apache.commons.httpclient.Credentials
+import org.apache.commons.httpclient.HttpClient
 import org.apache.commons.httpclient.UsernamePasswordCredentials
 import org.apache.commons.httpclient.auth.AuthScope
-import org.apache.commons.httpclient.methods.PutMethod
-import org.apache.commons.httpclient.HttpClient
+import org.apache.commons.httpclient.methods.DeleteMethod
 import org.apache.commons.httpclient.methods.FileRequestEntity
+import org.apache.commons.httpclient.methods.GetMethod
+import org.apache.commons.httpclient.methods.PutMethod
+import org.apache.jackrabbit.webdav.DavConstants
+import org.apache.jackrabbit.webdav.MultiStatusResponse
 import org.apache.jackrabbit.webdav.client.methods.DavMethod
 import org.apache.jackrabbit.webdav.client.methods.MkColMethod
 import org.apache.jackrabbit.webdav.client.methods.PropFindMethod
-import org.apache.jackrabbit.webdav.DavConstants
-import org.apache.jackrabbit.webdav.MultiStatusResponse
-import java.util.ArrayList
-import dto.OwnCloudFile
+import java.io.File
 import java.io.IOException
-import org.apache.commons.httpclient.methods.DeleteMethod
-import org.apache.commons.httpclient.methods.GetMethod
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.ArrayList
 
 object OwnCloudDao {
 
@@ -37,9 +38,10 @@ object OwnCloudDao {
             val creds = UsernamePasswordCredentials(user, pass)
             client.getState().setCredentials(AuthScope.ANY, creds)
             val getM = GetMethod(urlString)
+            client.executeMethod(getM)
             val is_ = getM.getResponseBodyAsStream()
             val file = File.createTempFile("pre", "suf")
-            Files.copy(is_, file.toPath())
+            Files.copy(is_, file.toPath(), StandardCopyOption.REPLACE_EXISTING)
             return file
         }catch(e:Exception){
             println("error")
@@ -54,7 +56,6 @@ object OwnCloudDao {
      * @param user
      * @param pass
      * @param targetFolder
-     * @param fileName
      * @param file
      * @return
      */
@@ -108,7 +109,7 @@ object OwnCloudDao {
      * @param pass
      * @param targetFolder
      * @return Fileの概要。といってもNameだけ。
-     *
+    *
      */
     fun getList(host:String, user:String, pass:String, targetFolder:String):List<OwnCloudFile>{
         try{
@@ -124,8 +125,24 @@ object OwnCloudDao {
             for (res:MultiStatusResponse in multiStatus.getResponses()) {
                 val name = res.getHref().replace("/remote.php/webdav/${targetFolder}", "")
                 if(name.isEmpty()) continue
-                results.add(OwnCloudFile(name))
-                //他のデータは取得できないっぽい。
+
+                var contentLength:Long = 0
+                var lastModified:String? = null
+                var contentType:String? = null
+                var id:String? = null
+                for(i in res.getProperties(200)){
+                    val key = i.getName().getName()
+                    if(key == "getcontentlength"){
+                        contentLength = i.getValue().toString().toLong()
+                    }else if(key == "getlastmodified"){
+                        lastModified = i.getValue().toString()
+                    }else if(key == "getcontenttype"){
+                        contentType = i.getValue().toString()
+                    }else if(key == "id"){
+                        id = i.getValue().toString()
+                    }
+                }
+                results.add(OwnCloudFile(id, name, contentType, lastModified, contentLength))
             }
             return results
         }catch(e:Exception){
@@ -142,7 +159,7 @@ object OwnCloudDao {
      * @param pass
      * @param targetPath
      * @return statusCode
-     *
+    *
      */
     fun deleteFile(host:String, user:String, pass:String, targetPath:String):Int{
         try{
